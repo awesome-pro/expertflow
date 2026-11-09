@@ -6,10 +6,12 @@ with a measured comparison against the best applicable production backend.
 **Status: Phase 0 complete — go/no-go is `PROCEED_TO_BASELINE` on a narrowed hypothesis.
 No kernel exists yet, and no GPU time has been spent.**
 
-Phase 0 found that the default decode path on H100 is vLLM's Triton fused-MoE (6 launches,
-`BLOCK_M=16`, no alignment kernel at T≤4), that the routed weights impose an 11.3 µs HBM floor at
-T=1, and that the two obvious wins (launch gaps, intermediate quant fusion) are already carried by
-open upstream PRs. The surviving target is GEMM streaming efficiency against that floor.
+Phase 0 found that the default decode path on H100 is vLLM's Triton fused-MoE — six launches,
+`BLOCK_M=16`, TMA weight loads, no alignment kernel at T≤4 — that the routed weights impose an
+11.27 µs HBM floor at T=1, that four of those six launches move under 0.5 % of the bytes, and that the
+pair-wise dispatch streams an expert's weights once per selecting token (up to 4× the necessary bytes
+at T=4, exactly 0× waste at T=1). The selected optimization is one kernel with distinct-expert
+dispatch and fused quantize/SwiGLU/combine.
 
 ## The operator
 

@@ -1,7 +1,7 @@
 # PROJECT.md — Plan of Record
 
-**Status:** Phase 0 complete — gate decision **PROCEED_TO_BASELINE** on revised hypothesis H1
-(2026-11-09). Phase 1 not started.
+**Status:** Phase 0 complete — gate decision **PROCEED_TO_BASELINE** on H1: single-launch fusion
+with distinct-expert dispatch (2026-11-09). Phase 1 not started.
 **Source brief:** [PLAN.md](PLAN.md). This file refines it; where the two disagree, this file wins.
 
 ExpertFlow builds one custom CUDA FP8 MoE decode operator for `Qwen/Qwen3-30B-A3B-FP8` on H100 SXM,
@@ -20,7 +20,7 @@ finds a real bottleneck in the existing backend, fixes it, and proves the fix at
 | 2026-11-09 | GPU budget | Minimize. Target **$30–40**, hard ceiling **$45**, no idle hardware, H100 only when a measurement needs it |
 | 2026-11-09 | Repo workflow | Commit and push to `origin/main` as we go; Apache-2.0 |
 | 2026-11-09 | Stack | Python 3.12 via `uv` (locked); CUTLASS/CuTe via CMake `FetchContent` at a pinned tag; pinned Docker image for GPU work |
-| 2026-11-09 | **Phase 0 gate** | **PROCEED_TO_BASELINE** on revised H1 (GEMM streaming efficiency); M-padding hypothesis retired; launch-overhead and quant-fusion targets dropped as already carried by open PRs |
+| 2026-11-09 | **Phase 0 gate** | **PROCEED_TO_BASELINE** on H1 — one kernel, distinct-expert dispatch. Bottleneck identified structurally: 4 of 6 launches move <0.5% of the bytes, and pair-wise dispatch moves up to 4x the necessary weight bytes at T=4. M-padding hypothesis retired (Triton uses M=16). Upstream overlap is a coordination risk, not a gate |
 
 **Working mode:** the agent works autonomously inside a phase and stops at each gate. Anything that
 changes the target operator, doubles the spend estimate, or invalidates a pre-registered threshold
@@ -155,12 +155,14 @@ result, not reframed.
 
 ## 8. Phase 0 execution plan (complete — outcome below)
 
-**Outcome (2026-11-09):** [research/feasibility.md](research/feasibility.md).
-Default path on H100 is Triton (not CUTLASS/DeepGEMM), 6 launches, `BLOCK_M=16`, no alignment kernel at
-`T ≤ 4`. The M=128 padding hypothesis is factually wrong here. Launch overhead is real (~2.7 µs) but
-already carried by open PRs #64846 and #65794. The surviving target is GEMM streaming efficiency
-against the 11.3 µs weight-traffic floor, to be measured in Phase 2 with pre-registered kill criteria.
-Also recorded: per-pair weight duplication on colliding routes at `T=4` (unclaimed, secondary).
+**Outcome (2026-11-09):** [research/feasibility.md](research/feasibility.md). Default path on H100 is
+Triton — 6 launches, `BLOCK_M=16`, `BLOCK_N=64`, TMA weight loads, **no** alignment kernel at `T ≤ 4`.
+Findings: (1) four of the six launches move <0.5 % of the bytes and cost 2-4 µs; (2) pair-wise dispatch
+streams an expert's weights once per selecting token, so `T=4` moves up to 151 MB against a 37.75 MB
+minimum, while `T=1` gains nothing from dedup by construction; (3) the GEMMs already use TMA and have
+~18× compute margin at `M=16`, so raw MMA efficiency is probably not the limiter — a testable
+prediction for Phase 2, not an assumption. H1: one kernel, distinct-expert dispatch, fused
+quant/SwiGLU/combine. Phase 2 (≈$8) measures the split and carries pre-registered kill criteria.
 
 
 
@@ -221,7 +223,7 @@ Each is closed in Phase 0 (A1–A5) or Phase 2 (A6).
 
 | # | Risk | Likelihood | Mitigation |
 |---|---|---|---|
-| R1 | Leading optimization already solved upstream | Medium-High | Rigorous overlap audit in Phase 0; stop-and-report rule |
+| R1 | Concurrent upstream work on the same Triton path | Medium | Treated as coordination risk, not a gate: the claim is structural (distinct-expert dispatch + single launch); related work recorded at Phase 2 and Phase 4 |
 | R2 | Kernel complexity exceeds budget/timeline | Medium | Ship simplest-correct version first; optimize only profiled factors; M=16→wgmma incrementally |
 | R3 | vLLM API churn breaks integration | Medium | Pin image digest; thin opt-in adapter; Phase 5 is not a prerequisite for the result |
 | R4 | FP8 numerics disagree with vLLM semantics | Medium | Replicate the exact quant formula; compare against an FP32-dequantized reference as well |
@@ -237,4 +239,4 @@ Each is closed in Phase 0 (A1–A5) or Phase 2 (A6).
 | Date | Change | Reason |
 |---|---|---|
 | 2026-11-09 | Plan of record created; thresholds, cost policy, and Phase 0 plan fixed | Kickoff review with owner |
-| 2026-11-09 | Phase 0 closed: hypothesis replaced, M-padding retired, B4 added | Code inspection of vLLM `b6ed63d2ac` + overlap audit |
+| 2026-11-09 | Phase 0 closed: hypothesis replaced with single-launch/distinct-expert fusion; PR-overlap demoted to a risk | Kernel-level inspection of vLLM `b6ed63d2ac` |
