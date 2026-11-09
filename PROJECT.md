@@ -1,6 +1,7 @@
 # PROJECT.md — Plan of Record
 
-**Status:** planning complete, Phase 0 not started (2026-11-09).
+**Status:** Phase 0 complete — gate decision **PROCEED_TO_BASELINE** on revised hypothesis H1
+(2026-11-09). Phase 1 not started.
 **Source brief:** [PLAN.md](PLAN.md). This file refines it; where the two disagree, this file wins.
 
 ExpertFlow builds one custom CUDA FP8 MoE decode operator for `Qwen/Qwen3-30B-A3B-FP8` on H100 SXM,
@@ -19,6 +20,7 @@ finds a real bottleneck in the existing backend, fixes it, and proves the fix at
 | 2026-11-09 | GPU budget | Minimize. Target **$30–40**, hard ceiling **$45**, no idle hardware, H100 only when a measurement needs it |
 | 2026-11-09 | Repo workflow | Commit and push to `origin/main` as we go; Apache-2.0 |
 | 2026-11-09 | Stack | Python 3.12 via `uv` (locked); CUTLASS/CuTe via CMake `FetchContent` at a pinned tag; pinned Docker image for GPU work |
+| 2026-11-09 | **Phase 0 gate** | **PROCEED_TO_BASELINE** on revised H1 (GEMM streaming efficiency); M-padding hypothesis retired; launch-overhead and quant-fusion targets dropped as already carried by open PRs |
 
 **Working mode:** the agent works autonomously inside a phase and stops at each gate. Anything that
 changes the target operator, doubles the spend estimate, or invalidates a pre-registered threshold
@@ -151,7 +153,16 @@ result, not reframed.
 
 ---
 
-## 8. Phase 0 execution plan
+## 8. Phase 0 execution plan (complete — outcome below)
+
+**Outcome (2026-11-09):** [research/feasibility.md](research/feasibility.md).
+Default path on H100 is Triton (not CUTLASS/DeepGEMM), 6 launches, `BLOCK_M=16`, no alignment kernel at
+`T ≤ 4`. The M=128 padding hypothesis is factually wrong here. Launch overhead is real (~2.7 µs) but
+already carried by open PRs #64846 and #65794. The surviving target is GEMM streaming efficiency
+against the 11.3 µs weight-traffic floor, to be measured in Phase 2 with pre-registered kill criteria.
+Also recorded: per-pair weight duplication on colliding routes at `T=4` (unclaimed, secondary).
+
+
 
 **Objective:** choose one worthwhile optimization, with evidence, before writing performance code.
 **Time-box:** 4–6 focused hours. **Cost:** $0.
@@ -195,12 +206,12 @@ the Q1–Q8 answers, and one explicit decision line.
 
 | # | Assumption | Consequence if wrong |
 |---|---|---|
-| A1 | Runtime fuses gate/up into `w13 = [gate; up]` (rows 0:I gate, I:2I up) | SwiGLU epilogue indexing changes; layout work |
-| A2 | No shared expert in this checkpoint | Scope grows if a shared expert exists |
-| A3 | `topk_weights` are FP32 and pre-normalized (sum ≈ 1) | Extra normalization inside or outside the boundary |
-| A4 | Activation quant is dynamic per-token-group (1×128) | Different quant kernel and scale layout |
-| A5 | Baseline accepts pre-computed top-k ids/weights | Boundary needs a re-definition |
-| A6 | The operator is latency-bound, not throughput-bound, at T≤4 | Optimization target changes |
+| A1 | Runtime fuses gate/up into `w13 = [gate; up]` (rows 0:I gate, I:2I up) | **Confirmed** — Triton consumes `w1 [E, 2I, H]`; the fused tensor is a loader artifact |
+| A2 | No shared expert in this checkpoint | **Confirmed** — absent from `config.json` |
+| A3 | `topk_weights` are FP32 and pre-normalized (sum ≈ 1) | **Confirmed** — `norm_topk_prob: true` |
+| A4 | Activation quant is dynamic per-token-group (1×128) | **Confirmed** — `kFp8Dynamic128Sym` + `per_token_group_quant_fp8` |
+| A5 | Baseline accepts pre-computed top-k ids/weights | **Confirmed** — the operator boundary takes `topk_ids`/`topk_weights` |
+| A6 | The operator is latency-bound at T≤4 | **Open** — Phase 2 profiler decides |
 
 Each is closed in Phase 0 (A1–A5) or Phase 2 (A6).
 
@@ -226,3 +237,4 @@ Each is closed in Phase 0 (A1–A5) or Phase 2 (A6).
 | Date | Change | Reason |
 |---|---|---|
 | 2026-11-09 | Plan of record created; thresholds, cost policy, and Phase 0 plan fixed | Kickoff review with owner |
+| 2026-11-09 | Phase 0 closed: hypothesis replaced, M-padding retired, B4 added | Code inspection of vLLM `b6ed63d2ac` + overlap audit |
