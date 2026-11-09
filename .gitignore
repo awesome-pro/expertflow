@@ -1,0 +1,37 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+uv.lock.bak
+.pytest_cache/
+.ruff_cache/
+
+# --- CUDA / C++ build ---
+build/
+cmake-build-*/
+*.o
+*.obj
+*.so
+*.a
+compile_commands.json
+.cache/
+
+# --- Project artifacts (regenerable or large) ---
+fixtures/
+results/logs/
+results/plots/
+*.pt
+*.npy
+*.nsys-rep
+*.ncu-rep
+*.sqlite
+
+# --- Model weights ---
+weights/
+*.safetensors
+
+# --- OS / editor ---
+.DS_Store
+.idea/
+.vscode/
+*.swp

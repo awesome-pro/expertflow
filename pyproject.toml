@@ -1,0 +1,43 @@
+[project]
+name = "expertflow"
+version = "0.1.0"
+description = "FP8 MoE decode kernel for Qwen3-30B-A3B on Hopper"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+license = { text = "Apache-2.0" }
+dependencies = [
+    "numpy>=1.26",
+    "ml-dtypes>=0.4",   # exact e4m3 emulation on CPU
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+]
+reference = [
+    "torch>=2.5",
+]
+gpu = [
+    "torch>=2.5",
+    "safetensors>=0.4",
+]
+
+[tool.uv]
+package = false
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["python"]
+markers = [
+    "gpu: requires a CUDA device (never runs locally)",
+    "slow: takes more than a few seconds",
+]
+addopts = "-q -m 'not gpu'"
